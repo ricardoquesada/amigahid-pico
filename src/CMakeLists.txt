@@ -17,12 +17,15 @@ pico_enable_stdio_uart(amigahid-pico 1)
 target_link_libraries(amigahid-pico PUBLIC
   pico_stdlib
   pico_multicore
+  pico_btstack_classic
+  pico_btstack_cyw43
   hardware_dma
   hardware_gpio
   hardware_i2c
   hardware_pio
   tinyusb_host
   tinyusb_board
+  bluepad32
 )
 
 add_compile_definitions(PICO_USE_MALLOC_MUTEX=0)
