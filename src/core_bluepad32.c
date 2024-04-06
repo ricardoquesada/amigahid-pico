@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include <pico/cyw43_arch.h>
-#include <pico/multicore.h>
+#include <pico/stdlib.h>
 #include <pico/time.h>
 #include <uni.h>
 
@@ -233,6 +233,14 @@ struct uni_platform *get_my_platform(void)
 
 void core_bluepad32(void)
 {
+    stdio_init_all();
+
+    // initialize CYW43 driver architecture (will enable BT if/because CYW43_ENABLE_BLUETOOTH == 1)
+    if (cyw43_arch_init()) {
+        printf("failed to initialise cyw43_arch\n");
+        return;
+    }
+
     // Must be called before uni_init()
     uni_platform_set_custom(get_my_platform());
 
