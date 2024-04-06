@@ -1,6 +1,8 @@
 add_executable(amigahid-pico
   main.c
   usb_hid.c
+        core_bluepad32.h
+        core_bluepad32.c
 )
 
 add_subdirectory(platform)

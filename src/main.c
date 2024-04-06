@@ -12,6 +12,8 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
+#include "pico/multicore.h"
+
 #include "display/disp_ssd.h"
 #include "platform/amiga/keyboard_serial_io.h"
 #include "platform/amiga/quad_mouse.h"
@@ -20,6 +22,8 @@
 
 #include "config.h"
 #include "tusb_config.h"
+
+#include "core_bluepad32.h"
 
 // defined within usb_hid.c
 extern void hid_app_task(void);
@@ -38,6 +42,8 @@ int main(void)
 
     // initialise the usb host stack on the rhport from tusb_config.h
     tuh_init(BOARD_TUH_RHPORT);
+
+    multicore_launch_core1(core_bluepad32);
 
     // we're single arch right now, but in future this should hand off to whatever the
     // configured arch is
