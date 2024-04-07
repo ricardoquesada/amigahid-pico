@@ -43,18 +43,21 @@ int main(void)
     // initialise the usb host stack on the rhport from tusb_config.h
     tuh_init(BOARD_TUH_RHPORT);
 
-    multicore_launch_core1(core_bluepad32);
+    bp32_init();
 
     // we're single arch right now, but in future this should hand off to whatever the
     // configured arch is
     amiga_init();
 
     // start amiga mouse emulation
-    amiga_quad_mouse_init();
+//    amiga_quad_mouse_init();
 
     while (1) {
         // run host mode jobs (hotplug events, packet io callbacks)
         tuh_task();
+
+        // Process Bluetooth messages
+        bp32_task();
 
         // amiga keyboard service routine
         amiga_service();

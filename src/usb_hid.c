@@ -19,35 +19,37 @@
 // other includes
 #include <stdint.h>
 
-#include "tusb_config.h"
-#include "platform/amiga/keyboard_serial_io.h"  // amiga only, for now, until i get hold of an ST :D
 #include "platform/amiga/keyboard.h"
+#include "platform/amiga/keyboard_serial_io.h" // amiga only, for now, until i get hold of an ST :D
 #include "platform/amiga/quad_mouse.h"
-#include "util/output.h"
+#include "tusb_config.h"
 #include "util/debug_cons.h"
+#include "util/output.h"
+
+#include "core_bluepad32.h"
+
+_Static_assert(sizeof(bp32_queue_entry_t) == sizeof(hid_keyboard_report_t), "Update bp32_queue_entry_t");
 
 // maximum number of reports per hid device
 #define MAX_REPORT 4
 
 // repetitive modifier check macros (@todo probably better iterated in future?)
-#define _SINGLE_MOD_CHECK(hid_mod) \
-    if ((report->modifier & hid_mod) && !(last_report.modifier & hid_mod)) \
-        amiga_hid_modifier(hid_mod, false); \
-    if (!(report->modifier & hid_mod) && (last_report.modifier & hid_mod)) \
+#define _SINGLE_MOD_CHECK(hid_mod)                                                                                     \
+    if ((report->modifier & hid_mod) && !(last_report.modifier & hid_mod))                                             \
+        amiga_hid_modifier(hid_mod, false);                                                                            \
+    if (!(report->modifier & hid_mod) && (last_report.modifier & hid_mod))                                             \
         amiga_hid_modifier(hid_mod, true);
 
-#define _MULTI_MOD_CHECK(hid_mod_a, hid_mod_b) \
-    if (((report->modifier & hid_mod_a) && !(last_report.modifier & hid_mod_a)) \
-        || ((report->modifier & hid_mod_b) && !(last_report.modifier & hid_mod_b)) \
-    ) \
-        amiga_hid_modifier(hid_mod_a, false); \
-    if ((!(report->modifier & hid_mod_a) && (last_report.modifier & hid_mod_a)) \
-        || (!(report->modifier & hid_mod_b) && (last_report.modifier & hid_mod_b)) \
-    ) \
+#define _MULTI_MOD_CHECK(hid_mod_a, hid_mod_b)                                                                         \
+    if (((report->modifier & hid_mod_a) && !(last_report.modifier & hid_mod_a)) ||                                     \
+        ((report->modifier & hid_mod_b) && !(last_report.modifier & hid_mod_b)))                                       \
+        amiga_hid_modifier(hid_mod_a, false);                                                                          \
+    if ((!(report->modifier & hid_mod_a) && (last_report.modifier & hid_mod_a)) ||                                     \
+        (!(report->modifier & hid_mod_b) && (last_report.modifier & hid_mod_b)))                                       \
         amiga_hid_modifier(hid_mod_a, true);
 
 // textual representations of attached devices
-const uint8_t hid_protocol_type[] = { AP_H_UNKNOWN, AP_H_KEYBOARD, AP_H_MOUSE };
+const uint8_t hid_protocol_type[] = {AP_H_UNKNOWN, AP_H_KEYBOARD, AP_H_MOUSE};
 
 // hid information structure
 static struct _hid_info
@@ -87,7 +89,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_re
     // implement a full stack. so if we're not in boot proto mode, display... something?
     // this might be number of interfaces on a device (think wireless kbd+mouse receiver). maybe. speculation.
     if (hid_protocol == HID_ITF_PROTOCOL_NONE) {
-        hid_info[instance].report_count = tuh_hid_parse_report_descriptor(hid_info[instance].report_info, MAX_REPORT, desc_report, desc_len);
+        hid_info[instance].report_count =
+            tuh_hid_parse_report_descriptor(hid_info[instance].report_info, MAX_REPORT, desc_report, desc_len);
         // ahprintf("[PLUG] %02x report(s)\n", hid_info[instance].report_count);
     }
 
@@ -140,7 +143,7 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
     // continue to request to receive report
     tuh_hid_receive_report(dev_addr, instance);
     // if (!tuh_hid_receive_report(dev_addr, instance))
-        // ahprintf("[ERROR] unable to receive hid event report\n");
+    // ahprintf("[ERROR] unable to receive hid event report\n");
 }
 
 /**
@@ -196,7 +199,8 @@ static void process_report(uint8_t dev_addr, uint8_t instance, uint8_t const *re
     }
 
     if (!report_info) {
-        // ahprintf("[ERROR] report_info pointer was not set during process_report(), value: $%x, report_count was %d\n", report_info, report_count);
+        // ahprintf("[ERROR] report_info pointer was not set during process_report(), value: $%x, report_count was
+        // %d\n", report_info, report_count);
         return;
     }
 
@@ -205,12 +209,12 @@ static void process_report(uint8_t dev_addr, uint8_t instance, uint8_t const *re
         switch (report_info->usage) {
             case HID_USAGE_DESKTOP_KEYBOARD:
                 // keyboard event; let's hope it appears as a boot proto event or else this will break
-                handle_event_keyboard(dev_addr, instance, (hid_keyboard_report_t const *) report);
+                handle_event_keyboard(dev_addr, instance, (hid_keyboard_report_t const *)report);
                 break;
 
             case HID_USAGE_DESKTOP_MOUSE:
                 // mouse event
-                handle_event_mouse(dev_addr, instance, (hid_mouse_report_t const *) report);
+                handle_event_mouse(dev_addr, instance, (hid_mouse_report_t const *)report);
                 break;
 
             default:
@@ -228,7 +232,7 @@ static void process_report(uint8_t dev_addr, uint8_t instance, uint8_t const *re
  */
 static void handle_event_mouse(uint8_t dev_addr, uint8_t instance, hid_mouse_report_t const *report)
 {
-    static hid_mouse_report_t last_report = { 0 };
+    static hid_mouse_report_t last_report = {0};
 
     if (report == NULL) {
         // ahprintf("[hid] report was null, aborting mouse event\n");
@@ -272,15 +276,15 @@ static uint8_t led_report = 0;
 static void handle_event_keyboard(uint8_t dev_addr, uint8_t instance, hid_keyboard_report_t const *report)
 {
     // keep hold of older key event reports; init empty keyboard report
-    static hid_keyboard_report_t last_report = { 0, 0, {0} };
+    static hid_keyboard_report_t last_report = {0, 0, {0}};
     uint8_t pos;
 
     // check to see if a keypress is a new keypress or in the last report
     for (pos = 0; pos < 6; pos++) {
         if (report->keycode[pos] && !key_pressed(&last_report, report->keycode[pos])) {
             // this is a new keypress; pass on to the amiga as a down event
-            // @todo right now, menu and right gui are both mapped to right amiga; if one is released, an ramiga up is sent
-            // probably something which can be fixed in keyboard_serial_io.c
+            // @todo right now, menu and right gui are both mapped to right amiga; if one is released, an ramiga up is
+            // sent probably something which can be fixed in keyboard_serial_io.c
             amiga_hid_send(report->keycode[pos], false);
         }
 
@@ -305,16 +309,24 @@ static void handle_event_keyboard(uint8_t dev_addr, uint8_t instance, hid_keyboa
             led_report |= KEYBOARD_LED_CAPSLOCK;
 
             // ahprintf("[hid] turning caps lock led on\n");
-            tuh_hid_set_report(dev_addr, instance, 0, HID_REPORT_TYPE_OUTPUT, &led_report, 1);
+            if (instance != 0xff && dev_addr != 0xff)
+                tuh_hid_set_report(dev_addr, instance, 0, HID_REPORT_TYPE_OUTPUT, &led_report, 1);
         }
     } else {
         if (led_report & KEYBOARD_LED_CAPSLOCK) {
             led_report &= ~KEYBOARD_LED_CAPSLOCK;
 
             // ahprintf("[hid] turning caps lock led off\n");
-            tuh_hid_set_report(dev_addr, instance, 0, HID_REPORT_TYPE_OUTPUT, &led_report, 1);
+            if (instance != 0xff && dev_addr != 0xff)
+                tuh_hid_set_report(dev_addr, instance, 0, HID_REPORT_TYPE_OUTPUT, &led_report, 1);
         }
     }
 
     last_report = *report;
+}
+
+void handle_bp32_keyboard_report(const bp32_queue_entry_t *entry)
+{
+    hid_keyboard_report_t *hid_report = (hid_keyboard_report_t *)entry;
+    handle_event_keyboard(0xff /* dev_address */, 0xff /* instance */, hid_report);
 }

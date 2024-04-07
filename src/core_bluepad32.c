@@ -7,14 +7,22 @@
 #include <string.h>
 
 #include <pico/cyw43_arch.h>
+#include <pico/multicore.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>
+#include <pico/util/queue.h>
+
 #include <uni.h>
 
 #include "sdkconfig.h"
 
+// Bluepad32 / TinyUSB queue
+static queue_t bp32_tuh_queue;
+
 // Declarations
 static void trigger_event_on_gamepad(uni_hid_device_t *d);
+// Defined in usb_hid.c
+void handle_bp32_keyboard_report(const bp32_queue_entry_t *entry);
 
 //
 // Platform Overrides
@@ -87,69 +95,33 @@ static uni_error_t my_platform_on_device_ready(uni_hid_device_t *d)
 
 static void my_platform_on_controller_data(uni_hid_device_t *d, uni_controller_t *ctl)
 {
-    static uint8_t leds = 0;
-    static uint8_t enabled = true;
     static uni_controller_t prev = {0};
-    uni_gamepad_t *gp;
+    bp32_queue_entry_t entry;
 
     if (memcmp(&prev, ctl, sizeof(*ctl)) == 0) {
         return;
     }
     prev = *ctl;
     // Print device Id before dumping gamepad.
-    logi("(%p) id=%d ", d, uni_hid_device_get_idx_for_instance(d));
-    uni_controller_dump(ctl);
+//    logi("(%p) id=%d ", d, uni_hid_device_get_idx_for_instance(d));
+//    uni_controller_dump(ctl);
 
     switch (ctl->klass) {
         case UNI_CONTROLLER_CLASS_GAMEPAD:
-            gp = &ctl->gamepad;
-
-            // Debugging
-            // Axis ry: control rumble
-            if ((gp->buttons & BUTTON_A) && d->report_parser.play_dual_rumble != NULL) {
-                d->report_parser.play_dual_rumble(d, 0 /* delayed start ms */, 250 /* duration ms */,
-                                                  128 /* weak magnitude */, 0 /* strong magnitude */);
-            }
-
-            if ((gp->buttons & BUTTON_B) && d->report_parser.play_dual_rumble != NULL) {
-                d->report_parser.play_dual_rumble(d, 0 /* delayed start ms */, 250 /* duration ms */,
-                                                  0 /* weak magnitude */, 128 /* strong magnitude */);
-            }
-            // Buttons: Control LEDs On/Off
-            if ((gp->buttons & BUTTON_X) && d->report_parser.set_player_leds != NULL) {
-                d->report_parser.set_player_leds(d, leds++ & 0x0f);
-            }
-            // Axis: control RGB color
-            if ((gp->buttons & BUTTON_Y) && d->report_parser.set_lightbar_color != NULL) {
-                uint8_t r = (gp->axis_x * 256) / 512;
-                uint8_t g = (gp->axis_y * 256) / 512;
-                uint8_t b = (gp->axis_rx * 256) / 512;
-                d->report_parser.set_lightbar_color(d, r, g, b);
-            }
-
-            // Toggle Bluetooth connections
-            if ((gp->buttons & BUTTON_SHOULDER_L) && enabled) {
-                logi("*** Disabling Bluetooth connections\n");
-                uni_bt_enable_new_connections_safe(false);
-                enabled = false;
-            }
-            if ((gp->buttons & BUTTON_SHOULDER_R) && !enabled) {
-                logi("*** Enabling Bluetooth connections\n");
-                uni_bt_enable_new_connections_safe(true);
-                enabled = true;
-            }
+            // Do something
             break;
         case UNI_CONTROLLER_CLASS_BALANCE_BOARD:
             // Do something
-            uni_balance_board_dump(&ctl->balance_board);
             break;
         case UNI_CONTROLLER_CLASS_MOUSE:
             // Do something
-            uni_mouse_dump(&ctl->mouse);
             break;
         case UNI_CONTROLLER_CLASS_KEYBOARD:
             // Do something
-            uni_keyboard_dump(&ctl->keyboard);
+            entry.modifier = d->controller.keyboard.modifiers;
+            // TinyUSB has 6 entries, while BP32 supports 10. Use the TinyUSB.
+            memcpy(entry.keycode, d->controller.keyboard.pressed_keys, sizeof(entry.keycode));
+            queue_add_blocking(&bp32_tuh_queue, &entry);
             break;
         default:
             loge("Unsupported controller class: %d\n", ctl->klass);
@@ -231,10 +203,9 @@ struct uni_platform *get_my_platform(void)
     return &plat;
 }
 
-void core_bluepad32(void)
+// Runs on Core 1
+static void bp32_main_core1(void)
 {
-    stdio_init_all();
-
     // initialize CYW43 driver architecture (will enable BT if/because CYW43_ENABLE_BLUETOOTH == 1)
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");
@@ -249,4 +220,28 @@ void core_bluepad32(void)
 
     // Does not return.
     btstack_run_loop_execute();
+}
+
+// Runs on Core 0
+void bp32_init(void)
+{
+    stdio_init_all();
+    queue_init(&bp32_tuh_queue, sizeof(bp32_queue_entry_t), 10);
+
+    multicore_launch_core1(bp32_main_core1);
+}
+
+//
+// Communication with TinyUSB / AmigaHid
+//
+
+// Runs on Core0
+void bp32_task(void)
+{
+    bp32_queue_entry_t entry;
+
+    while (!queue_is_empty(&bp32_tuh_queue)) {
+        queue_remove_blocking(&bp32_tuh_queue, &entry);
+        handle_bp32_keyboard_report(&entry);
+    }
 }
