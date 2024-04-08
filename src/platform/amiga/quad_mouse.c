@@ -17,14 +17,21 @@
 
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
+#include "pico/util/queue.h"
 #include "hardware/gpio.h"
 
 // mouse motion values, used between core0 and core1
-volatile int8_t x = 0, y = 0;
 volatile bool motion_flag = false;
 volatile uint8_t motion_divider = 2;
 
+static queue_t mouse_queue;
+
 enum _mouse_pin_state { LOW, HIGH };
+
+typedef struct {
+    int8_t x;
+    int8_t y;
+} mouse_queue_entry_t;
 
 static inline void _aqm_gpio_set(uint gpio, enum _mouse_pin_state state)
 {
@@ -89,19 +96,24 @@ void amiga_quad_mouse_button(enum amiga_quad_mouse_buttons button, bool pressed)
 
 void amiga_quad_mouse_set_motion(int8_t in_x, int8_t in_y)
 {
-    x = in_x;
-    y = in_y;
-    motion_flag = true;
+    mouse_queue_entry_t entry = {
+        .x = in_x,
+        .y = in_y,
+    };
+    queue_add_blocking(&mouse_queue, &entry);
 
-    // @todo use fifo write here to unblock core1 thread?
+    // Should be modifier after adding entry in queue
+    motion_flag = true;
 }
 
+// @todo: convert to timer-based to avoid having a dedicated core to use it.
 void amiga_quad_mouse_motion()
 {
     // ahprintf("[aqm] hello from core1, mouse motion output loop starting\n");
     int8_t out_x, out_y;
     uint8_t quad_mx_state = 0, quad_my_state = 0;
     bool motion_x_skip = false, motion_y_skip = false;
+    mouse_queue_entry_t entry;
 
     /**
      * a little note about quadrature motion state.
@@ -115,11 +127,14 @@ void amiga_quad_mouse_motion()
      * https://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node017F.html
      */
 
+    queue_init(&mouse_queue, sizeof(mouse_queue_entry_t), 10);
+
     while (1) {
-        // @todo use blocking fifo read here to prevent wasting cycles?
-        out_x = x;
-        out_y = y;
-        x = y = 0;
+
+        queue_remove_blocking(&mouse_queue, &entry);
+
+        out_x = entry.x;
+        out_y = entry.y;
         motion_flag = false;
 
         while (((out_x != 0) || (out_y != 0)) && !motion_flag) {
