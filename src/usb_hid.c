@@ -28,7 +28,8 @@
 
 #include "core_bluepad32.h"
 
-_Static_assert(sizeof(bp32_queue_entry_t) == sizeof(hid_keyboard_report_t), "Update bp32_queue_entry_t");
+_Static_assert(sizeof(bp32_queue_kb_entry_t) == sizeof(hid_keyboard_report_t), "Update bp32_queue_kb_entry_t");
+_Static_assert(sizeof(bp32_queue_mouse_entry_t) == sizeof(hid_mouse_report_t), "Update bp32_queue_kb_entry_t");
 
 // maximum number of reports per hid device
 #define MAX_REPORT 4
@@ -325,8 +326,13 @@ static void handle_event_keyboard(uint8_t dev_addr, uint8_t instance, hid_keyboa
     last_report = *report;
 }
 
-void handle_bp32_keyboard_report(const bp32_queue_entry_t *entry)
+void handle_bp32_report(const bp32_queue_entry_t *entry)
 {
-    hid_keyboard_report_t *hid_report = (hid_keyboard_report_t *)entry;
-    handle_event_keyboard(0xff /* dev_address */, 0xff /* instance */, hid_report);
+    if (entry->type == BP32_REPORT_TYPE_KEYBOARD) {
+        hid_keyboard_report_t *hid_report = (hid_keyboard_report_t *)&entry->kb;
+        handle_event_keyboard(0xff /* dev_address */, 0xff /* instance */, hid_report);
+    } else if (entry->type == BP32_REPORT_TYPE_MOUSE) {
+        hid_mouse_report_t *hid_report = (hid_mouse_report_t *)&entry->mouse;
+        handle_event_mouse(0xff /* dev_address */, 0xff /* instance */, hid_report);
+    }
 }

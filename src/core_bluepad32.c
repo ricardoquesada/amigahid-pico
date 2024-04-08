@@ -22,7 +22,7 @@ static queue_t bp32_tuh_queue;
 // Declarations
 static void trigger_event_on_gamepad(uni_hid_device_t *d);
 // Defined in usb_hid.c
-void handle_bp32_keyboard_report(const bp32_queue_entry_t *entry);
+void handle_bp32_report(const bp32_queue_entry_t *entry);
 
 //
 // Platform Overrides
@@ -115,12 +115,19 @@ static void my_platform_on_controller_data(uni_hid_device_t *d, uni_controller_t
             break;
         case UNI_CONTROLLER_CLASS_MOUSE:
             // Do something
+            entry.type = BP32_REPORT_TYPE_MOUSE;
+            entry.mouse.buttons = d->controller.mouse.buttons;
+            entry.mouse.x = d->controller.mouse.delta_x;
+            entry.mouse.y = d->controller.mouse.delta_y;
+            entry.mouse.wheel = d->controller.mouse.scroll_wheel;
+            queue_add_blocking(&bp32_tuh_queue, &entry);
             break;
         case UNI_CONTROLLER_CLASS_KEYBOARD:
             // Do something
-            entry.modifier = d->controller.keyboard.modifiers;
+            entry.type = BP32_REPORT_TYPE_KEYBOARD;
+            entry.kb.modifier = d->controller.keyboard.modifiers;
             // TinyUSB has 6 entries, while BP32 supports 10. Use the TinyUSB.
-            memcpy(entry.keycode, d->controller.keyboard.pressed_keys, sizeof(entry.keycode));
+            memcpy(entry.kb.keycode, d->controller.keyboard.pressed_keys, sizeof(entry.kb.keycode));
             queue_add_blocking(&bp32_tuh_queue, &entry);
             break;
         default:
@@ -242,6 +249,6 @@ void bp32_task(void)
 
     while (!queue_is_empty(&bp32_tuh_queue)) {
         queue_remove_blocking(&bp32_tuh_queue, &entry);
-        handle_bp32_keyboard_report(&entry);
+        handle_bp32_report(&entry);
     }
 }
